@@ -1,5 +1,8 @@
+#include <Crc16.h>
+#include <math.h>
 #include <SPI.h>
 #include <LoRa.h>
+#include <Arduino.h>
 
 #define SCK     5
 #define LoRa_MISO 19
@@ -9,14 +12,13 @@
 #define irqPin  26
 #define BAND    921E6//433E6 
 
-#define RXD2 16
-#define TXD2 17
+byte DataReadfromSerial[50];
+bool read_fin = false;
+int count = 0;
 
 void setup() 
 {
-  Serial.begin(9600);
-  Serial2.begin(9600, SERIAL_8N1, RXD2, TXD2);
-  pinMode(RXD2,INPUT_PULLUP);
+  Serial.begin(115200);
   pinMode(irqPin,INPUT);
   SPI.begin(SCK,LoRa_MISO,LoRa_MOSI,SS);
   LoRa.setPins(SS,RST,irqPin);
@@ -26,28 +28,51 @@ void setup()
     while (1);
   }
   LoRa.onReceive(onReceive); // register the receive callback
-  LoRa.receive();
+  LoRa.receive(); // put the radio into receive mode
+
 }
 
 void loop() 
 {
-  while (Serial2.available()) 
+  LoRa.receive();
+  while (Serial.available()) 
   {
-    byte respone = (byte)Serial2.read();
-    LoRa.write(respone);
-    Serial.write(respone);
+    byte respone = (byte)Serial.read();
+    //Serial.write(respone);
+    DataReadfromSerial[count] = respone;
+    count++;
+
+    if(respone == 0x0A) // "\n"
+    {
+      read_fin = true;
+    }
   }
-  delay(100);
+
+  if(read_fin == true)
+  {
+    // send packet
+    LoRa.beginPacket();
+    for(byte i=0;i<count-1;i++)
+    {
+      LoRa.write(DataReadfromSerial[i]);
+    }
+    LoRa.endPacket();
+    count = 0;
+    memset(DataReadfromSerial,0,50);
+    read_fin = false;
+  }
+  delay(250);
 }
 
 void onReceive(int packetSize) 
 {
+  byte DataIn[70];
+  // read packet
   for (int i = 0; i < packetSize; i++) 
   {
-    byte LoRaData = (byte)LoRa.read();
-    Serial.write(LoRaData);
-    Serial2.write(LoRaData);
+    DataIn[i] = (byte)LoRa.read();
+    Serial.write(DataIn[i]);
   }
   Serial.print("\n");
-  Serial2.print("\n");
+  //memset(DataIn,0,70);
 }
